@@ -1,8 +1,18 @@
-import { useEffect, useMemo, useRef } from "react";
-import { LayersControl, MapContainer, Marker, TileLayer, Tooltip, useMap } from "react-leaflet";
+import { useEffect, useMemo, useRef, useState } from "react";
+import {
+  LayerGroup,
+  LayersControl,
+  MapContainer,
+  Marker,
+  TileLayer,
+  Tooltip,
+  useMap,
+} from "react-leaflet";
 import L from "leaflet";
 import type { Reserve } from "../types";
 import { reservePinIcon, reservePinIconSelected } from "../lib/icons";
+import { HexOverlay } from "./HexOverlay";
+import { HEX_LEGEND } from "../lib/hex";
 
 interface Props {
   reserves: Reserve[];
@@ -67,8 +77,38 @@ function MapBehavior({
   return null;
 }
 
+const HEX_RESOLUTIONS = [
+  { res: 5, label: "5", description: "~9 km hexes (county-scale)" },
+  { res: 6, label: "6", description: "~3.7 km hexes (district-scale)" },
+  { res: 7, label: "7", description: "~1.4 km hexes (neighbourhood-scale)" },
+];
+
+const HEX_OVERLAY_NAME = "Density (H3 hexes)";
+
+/** Mirror Leaflet's LayersControl overlay on/off state into React state. */
+function HexOverlayWatcher({ onChange }: { onChange: (active: boolean) => void }) {
+  const map = useMap();
+  useEffect(() => {
+    const onAdd = (e: L.LayersControlEvent) => {
+      if (e.name === HEX_OVERLAY_NAME) onChange(true);
+    };
+    const onRemove = (e: L.LayersControlEvent) => {
+      if (e.name === HEX_OVERLAY_NAME) onChange(false);
+    };
+    map.on("overlayadd", onAdd);
+    map.on("overlayremove", onRemove);
+    return () => {
+      map.off("overlayadd", onAdd);
+      map.off("overlayremove", onRemove);
+    };
+  }, [map, onChange]);
+  return null;
+}
+
 export function MapView({ reserves, selectedSlug, onSelect, userLocation }: Props) {
   const center = useMemo<[number, number]>(() => [54.0, -1.5], []);
+  const [hexResolution, setHexResolution] = useState<number>(6);
+  const [hexLayerActive, setHexLayerActive] = useState(false);
 
   // Defensive cleanup against Leaflet leaving tooltips open when mouseout
   // doesn't fire (happens when the cursor jumps quickly between overlapping
@@ -88,23 +128,29 @@ export function MapView({ reserves, selectedSlug, onSelect, userLocation }: Prop
   };
 
   return (
-    <MapContainer center={center} zoom={8} className="h-full w-full" zoomControl>
-      <LayersControl position="topright">
-        <LayersControl.BaseLayer checked name="Topographic">
-          <TileLayer
-            attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OSM</a> contributors, SRTM | Style: &copy; <a href="https://opentopomap.org">OpenTopoMap</a>'
-            url="https://a.tile.opentopomap.org/{z}/{x}/{y}.png"
-            maxZoom={17}
-          />
-        </LayersControl.BaseLayer>
-        <LayersControl.BaseLayer name="Street (OpenStreetMap)">
-          <TileLayer
-            attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
-            url="https://tile.openstreetmap.org/{z}/{x}/{y}.png"
-            maxZoom={19}
-          />
-        </LayersControl.BaseLayer>
-      </LayersControl>
+    <div className="relative h-full w-full">
+      <MapContainer center={center} zoom={8} className="h-full w-full" zoomControl>
+        <LayersControl position="topright">
+          <LayersControl.BaseLayer checked name="Topographic">
+            <TileLayer
+              attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OSM</a> contributors, SRTM | Style: &copy; <a href="https://opentopomap.org">OpenTopoMap</a>'
+              url="https://a.tile.opentopomap.org/{z}/{x}/{y}.png"
+              maxZoom={17}
+            />
+          </LayersControl.BaseLayer>
+          <LayersControl.BaseLayer name="Street (OpenStreetMap)">
+            <TileLayer
+              attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+              url="https://tile.openstreetmap.org/{z}/{x}/{y}.png"
+              maxZoom={19}
+            />
+          </LayersControl.BaseLayer>
+          <LayersControl.Overlay name={HEX_OVERLAY_NAME}>
+            <LayerGroup>
+              <HexOverlay reserves={reserves} resolution={hexResolution} />
+            </LayerGroup>
+          </LayersControl.Overlay>
+        </LayersControl>
 
       {reserves.map((r) => {
         const selected = r.slug === selectedSlug;
@@ -139,7 +185,50 @@ export function MapView({ reserves, selectedSlug, onSelect, userLocation }: Prop
         />
       )}
 
-      <MapBehavior reserves={reserves} selectedSlug={selectedSlug} />
-    </MapContainer>
+        <MapBehavior reserves={reserves} selectedSlug={selectedSlug} />
+        <HexOverlayWatcher onChange={setHexLayerActive} />
+      </MapContainer>
+
+      {hexLayerActive && (
+      <div className="absolute bottom-7 left-2 z-1000 rounded-md border border-slate-300 bg-white/95 px-2 py-1.5 text-[11px] shadow-sm">
+        <div className="mb-1 flex items-center gap-1.5">
+          <span className="font-medium text-slate-700">Reserves / hex</span>
+          <span className="text-slate-400">·</span>
+          <span className="text-slate-500">resolution</span>
+          <div className="inline-flex overflow-hidden rounded border border-slate-300">
+            {HEX_RESOLUTIONS.map((opt) => {
+              const active = opt.res === hexResolution;
+              return (
+                <button
+                  key={opt.res}
+                  onClick={() => setHexResolution(opt.res)}
+                  className={
+                    "px-1.5 py-0.5 " +
+                    (active
+                      ? "bg-emerald-700 text-white"
+                      : "bg-white text-slate-700 hover:bg-slate-100")
+                  }
+                  title={opt.description}
+                >
+                  {opt.label}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+        <div className="flex items-center gap-1">
+          {HEX_LEGEND.map((entry) => (
+            <div key={entry.label} className="flex items-center gap-1">
+              <span
+                className="inline-block h-3 w-3 rounded-sm border border-slate-400"
+                style={{ background: entry.color }}
+              />
+              <span className="text-slate-600">{entry.label}</span>
+            </div>
+          ))}
+        </div>
+      </div>
+      )}
+    </div>
   );
 }
