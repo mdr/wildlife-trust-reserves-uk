@@ -47,6 +47,7 @@ export function App() {
     () => applyFiltersAndSort(ALL_RESERVES, filters, sort, geo.coords),
     [filters, sort, geo.coords],
   );
+  const pinReserves = useMemo(() => results.map((r) => r.reserve), [results]);
 
   const selectedReserve = useMemo(
     () => (slug ? ALL_RESERVES.find((r) => r.slug === slug) ?? null : null),
@@ -106,7 +107,8 @@ export function App() {
       <div className="relative h-full w-full overflow-hidden">
         <div className="absolute inset-0">
           <MapView
-            reserves={ALL_RESERVES}
+            allReserves={ALL_RESERVES}
+            pinReserves={pinReserves}
             selectedSlug={slug}
             onSelect={onSelect}
             userLocation={geo.coords}
@@ -126,7 +128,8 @@ export function App() {
       </aside>
       <main className="h-full flex-1">
         <MapView
-          reserves={ALL_RESERVES}
+          allReserves={ALL_RESERVES}
+          pinReserves={pinReserves}
           selectedSlug={slug}
           onSelect={onSelect}
           userLocation={geo.coords}

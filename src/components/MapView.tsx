@@ -15,7 +15,10 @@ import { HexOverlay } from "./HexOverlay";
 import { HEX_LEGEND } from "../lib/hex";
 
 interface Props {
-  reserves: Reserve[];
+  /** Full set; used for the density overlay, fit-bounds, and selected lookup. */
+  allReserves: Reserve[];
+  /** Filtered set; used for the visible pin markers. */
+  pinReserves: Reserve[];
   selectedSlug: string | null;
   onSelect: (slug: string) => void;
   userLocation: { lat: number; lng: number } | null;
@@ -37,30 +40,35 @@ function pinScaleForZoom(zoom: number): number {
  * On first mount, fit the map to all reserves. When the selected reserve
  * changes, pan/zoom to it. Continuously update the --pin-scale CSS variable
  * so pins shrink at low zoom.
+ *
+ * Note: fit-bounds only fires once (initial mount). Subsequent filter changes
+ * don't re-zoom — the user keeps control of the viewport.
  */
 function MapBehavior({
-  reserves,
+  allReserves,
   selectedSlug,
 }: {
-  reserves: Reserve[];
+  allReserves: Reserve[];
   selectedSlug: string | null;
 }) {
   const map = useMap();
+  const fittedRef = useRef(false);
 
   useEffect(() => {
-    if (reserves.length === 0) return;
-    const bounds = L.latLngBounds(reserves.map((r) => [r.lat, r.lng]));
+    if (fittedRef.current || allReserves.length === 0) return;
+    fittedRef.current = true;
+    const bounds = L.latLngBounds(allReserves.map((r) => [r.lat, r.lng]));
     map.fitBounds(bounds, { padding: [40, 40] });
-  }, [map, reserves]);
+  }, [map, allReserves]);
 
   useEffect(() => {
     if (!selectedSlug) return;
-    const reserve = reserves.find((r) => r.slug === selectedSlug);
+    const reserve = allReserves.find((r) => r.slug === selectedSlug);
     if (!reserve) return;
     const target = L.latLng(reserve.lat, reserve.lng);
     const currentZoom = map.getZoom();
     map.flyTo(target, Math.max(currentZoom, 12), { duration: 0.6 });
-  }, [map, reserves, selectedSlug]);
+  }, [map, allReserves, selectedSlug]);
 
   useEffect(() => {
     const container = map.getContainer();
@@ -105,7 +113,13 @@ function HexOverlayWatcher({ onChange }: { onChange: (active: boolean) => void }
   return null;
 }
 
-export function MapView({ reserves, selectedSlug, onSelect, userLocation }: Props) {
+export function MapView({
+  allReserves,
+  pinReserves,
+  selectedSlug,
+  onSelect,
+  userLocation,
+}: Props) {
   const center = useMemo<[number, number]>(() => [54.0, -1.5], []);
   const [hexResolution, setHexResolution] = useState<number>(6);
   const [hexLayerActive, setHexLayerActive] = useState(false);
@@ -147,12 +161,12 @@ export function MapView({ reserves, selectedSlug, onSelect, userLocation }: Prop
           </LayersControl.BaseLayer>
           <LayersControl.Overlay name={HEX_OVERLAY_NAME}>
             <LayerGroup>
-              <HexOverlay reserves={reserves} resolution={hexResolution} />
+              <HexOverlay reserves={allReserves} resolution={hexResolution} />
             </LayerGroup>
           </LayersControl.Overlay>
         </LayersControl>
 
-      {reserves.map((r) => {
+      {pinReserves.map((r) => {
         const selected = r.slug === selectedSlug;
         return (
           <Marker
@@ -185,7 +199,7 @@ export function MapView({ reserves, selectedSlug, onSelect, userLocation }: Prop
         />
       )}
 
-        <MapBehavior reserves={reserves} selectedSlug={selectedSlug} />
+        <MapBehavior allReserves={allReserves} selectedSlug={selectedSlug} />
         <HexOverlayWatcher onChange={setHexLayerActive} />
       </MapContainer>
 
