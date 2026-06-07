@@ -20,14 +20,17 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - uses: pnpm/action-setup@v4
-        with:
-          version: 11
+      - uses: DeterminateSystems/determinate-nix-action@v3
 
-      - uses: actions/setup-node@v4
+      - uses: DeterminateSystems/magic-nix-cache-action@main
+
+      - uses: nicknovitski/nix-develop@v1
+
+      - uses: actions/cache@v4
         with:
-          node-version: 22
-          cache: pnpm
+          path: ~/.local/share/pnpm/store
+          key: pnpm-store-${{ hashFiles('pnpm-lock.yaml') }}
+          restore-keys: pnpm-store-
 
       - run: pnpm install --frozen-lockfile
 
